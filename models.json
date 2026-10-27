@@ -1,0 +1,58 @@
+{
+  "_help": [
+    "AI models shown in the app. Edit this file to add, remove or re-price models; the server re-reads it on change (no restart).",
+    "id: unique name used by the app. group/label: how it appears in the dropdown. enabled: false hides it.",
+    "provider: 'openai-compatible' (most providers), 'anthropic', or 'offline'. baseUrl: the provider's API address.",
+    "model: the provider's model ID. modelEnv (optional): an env var that overrides the model ID.",
+    "keyEnv: the env var in .env holding the API key. local: true for self-hosted servers that need no key; baseUrlEnv (optional) overrides baseUrl.",
+    "maxTokens (optional): the most the model may write per request (default 3000; 8000 for Anthropic). Lower it to fit a provider's output-per-minute limit. If a record hits it, the app refuses the record and says so, rather than saving a cut-off note.",
+    "price: USD per 1 million tokens. input = what we send, output = what the model writes. checked: date you last confirmed it. source: where it came from.",
+    "Leave price out for self-hosted models (you pay for hardware instead). reasoning: true if the model writes hidden 'thinking' tokens, which are billed as output."
+  ],
+  "models": [
+    { "id": "deepseek-v4-flash", "group": "Cloud API (Ultra-Low Cost)", "label": "DeepSeek V4 Flash (Fast, Dirt Cheap)", "enabled": true,
+      "provider": "openai-compatible", "baseUrl": "https://api.deepseek.com/v1", "model": "deepseek-v4-flash", "modelEnv": "DEEPSEEK_FLASH_MODEL", "keyEnv": "DEEPSEEK_API_KEY",
+      "price": { "input": 0.30, "output": 1.20, "checked": "2026-10-27", "source": "api-docs.deepseek.com (peak-hour rate; off-peak is half)" } },
+
+    { "id": "deepseek-v4-pro", "group": "Cloud API (Ultra-Low Cost)", "label": "DeepSeek V4 Pro (High Reasoning / Deep Clean)", "enabled": true,
+      "provider": "openai-compatible", "baseUrl": "https://api.deepseek.com/v1", "model": "deepseek-v4-pro", "modelEnv": "DEEPSEEK_PRO_MODEL", "keyEnv": "DEEPSEEK_API_KEY", "reasoning": true,
+      "price": { "input": 1.32, "output": 3.96, "checked": "2026-10-27", "source": "api-docs.deepseek.com (peak-hour rate; off-peak is half)" } },
+
+    { "id": "qwen3.8-flash", "group": "Cloud API (Ultra-Low Cost)", "label": "Alibaba Qwen 3.8 Flash (Excellent Multi-lingual)", "enabled": true,
+      "provider": "openai-compatible", "baseUrl": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1", "model": "qwen3.8-flash", "modelEnv": "QWEN_FLASH_MODEL", "keyEnv": "DASHSCOPE_API_KEY",
+      "price": { "input": 0.15, "output": 0.47, "checked": "2026-10-27", "source": "third-party tracker; not confirmed on Alibaba's page" } },
+
+    { "id": "qwen3.7-plus", "group": "Cloud API (Ultra-Low Cost)", "label": "Alibaba Qwen 3.7 Plus (Balanced & Stable)", "enabled": true,
+      "provider": "openai-compatible", "baseUrl": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1", "model": "qwen3.7-plus", "modelEnv": "QWEN_PLUS_MODEL", "keyEnv": "DASHSCOPE_API_KEY",
+      "price": { "input": 0.40, "output": 1.60, "checked": "2026-10-27", "source": "third-party trackers (Alibaba Singapore-region rate)" } },
+
+    { "id": "openai-mini", "group": "Cloud API (Ultra-Low Cost)", "label": "OpenAI GPT-4o mini (Cheap, Reliable JSON)", "enabled": true,
+      "provider": "openai-compatible", "baseUrl": "https://api.openai.com/v1", "model": "gpt-4o-mini", "modelEnv": "OPENAI_MODEL", "keyEnv": "OPENAI_API_KEY",
+      "price": { "input": 0.15, "output": 0.60, "checked": "2026-10-27", "source": "OpenAI pricing" } },
+
+    { "id": "groq-qwen", "group": "Hosted Inference (Free Tier Available)", "label": "Groq Cloud: Qwen 3.8 27B (Fast)", "enabled": true,
+      "provider": "openai-compatible", "baseUrl": "https://api.groq.com/openai/v1", "model": "qwen/qwen3.8-27b", "modelEnv": "GROQ_QWEN_MODEL", "keyEnv": "GROQ_API_KEY", "maxTokens": 1000,
+      "price": { "input": 0.80, "output": 4.00, "checked": "2026-10-27", "source": "flexprice.io (third-party; preview model)" } },
+
+    { "id": "groq-gpt-oss-120b", "group": "Hosted Inference (Free Tier Available)", "label": "Groq Cloud: GPT-OSS 120B (Deep Formatting)", "enabled": true,
+      "provider": "openai-compatible", "baseUrl": "https://api.groq.com/openai/v1", "model": "openai/gpt-oss-120b", "modelEnv": "GROQ_GPT_OSS_120B_MODEL", "keyEnv": "GROQ_API_KEY", "reasoning": true,
+      "price": { "input": 0.15, "output": 0.60, "checked": "2026-10-27", "source": "morphllm.com, flexprice.io (third-party)" } },
+
+    { "id": "groq-gpt-oss-20b", "group": "Hosted Inference (Free Tier Available)", "label": "Groq Cloud: GPT-OSS 20B (Ultra-Fast)", "enabled": true,
+      "provider": "openai-compatible", "baseUrl": "https://api.groq.com/openai/v1", "model": "openai/gpt-oss-20b", "modelEnv": "GROQ_GPT_OSS_20B_MODEL", "keyEnv": "GROQ_API_KEY", "reasoning": true,
+      "price": { "input": 0.075, "output": 0.30, "checked": "2026-10-27", "source": "morphllm.com, flexprice.io (third-party)" } },
+
+    { "id": "local-ollama-qwen3", "group": "Self-Hosted (Private Server)", "label": "Local: Ollama / Qwen 3 (100% Private)", "enabled": true,
+      "provider": "openai-compatible", "local": true, "baseUrl": "http://localhost:11434/v1", "baseUrlEnv": "OLLAMA_URL", "model": "qwen3", "modelEnv": "OLLAMA_MODEL", "reasoning": true },
+
+    { "id": "local-vllm-deepseek", "group": "Self-Hosted (Private Server)", "label": "Local: vLLM / DeepSeek 7B (High Throughput)", "enabled": true,
+      "provider": "openai-compatible", "local": true, "baseUrl": "http://localhost:8000/v1", "baseUrlEnv": "VLLM_URL", "model": "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B", "modelEnv": "VLLM_MODEL", "reasoning": true },
+
+    { "id": "claude-haiku", "group": "Anthropic", "label": "Claude Haiku (Reliable baseline)", "enabled": true,
+      "provider": "anthropic", "model": "claude-haiku-5-5", "modelEnv": "ANTHROPIC_MODEL", "keyEnv": "ANTHROPIC_API_KEY", "reasoning": true,
+      "price": { "input": 0.10, "output": 0.50, "checked": "2026-10-27", "source": "Anthropic model table (prompts up to 100K tokens)" } },
+
+    { "id": "offline", "group": "No AI", "label": "Offline rules only (no AI, basic cleanup)", "enabled": true,
+      "provider": "offline", "price": { "input": 0, "output": 0, "checked": "2026-10-27", "source": "runs on this server" } }
+  ]
+}

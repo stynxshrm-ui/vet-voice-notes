@@ -1,16 +1,17 @@
 import './env.js';
-// Zero-dependency server: static files + /api/refine (calls Claude, or a local fallback with no API key).
+// Zero-dependency server: static files + /api/refine (dictation -> record), /api/summary (record -> client message).
 import http from 'node:http';
-import { timingSafeEqual } from 'node:crypto';
+import { timingSafeEqual, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { SYSTEM_PROMPT, buildUserMessage } from './prompts.js';
-import { find, isAvailable, publicList, MODELS } from './models.js';
+import { buildSystem, buildUserMessage, SUMMARY_SYSTEM, buildSummaryMessage } from './prompts.js';
+import { findTemplate, publicTemplates } from './templates.js';
+import { find, isAvailable, publicList, costUsd, models } from './models.js';
 
 const PORT = process.env.PORT || 3000;
 const PASSWORD = process.env.APP_PASSWORD;
-const USER = process.env.APP_USER || 'hr';
+const USER = process.env.APP_USER || 'vet';
 const RATE_LIMIT = Number(process.env.RATE_LIMIT_PER_MIN) || 20;
 
 // Public deployments must be password protected, otherwise anyone can spend your API credits.
@@ -23,7 +24,7 @@ function authorized(req) {
   return same(u || '', USER) && same(rest.join(':'), PASSWORD);
 }
 
-const hits = new Map(); // ip -> timestamps of recent /api/refine calls
+const hits = new Map(); // ip -> timestamps of recent AI calls
 function rateLimited(req) {
   const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
   const now = Date.now(), recent = (hits.get(ip) || []).filter(t => now - t < 60_000);
@@ -40,64 +41,84 @@ function extractJson(s) {
   return JSON.parse(s.slice(a, b + 1));
 }
 
-const userMsg = body => buildUserMessage({ ...body, today: new Date().toISOString().slice(0, 10) });
-
-async function callModel(m, body) {
+async function callModel(m, system, user) {
   const key = process.env[m.keyEnv];
   const anthropic = m.provider === 'anthropic';
+  // Per-model cap from models.json; Claude needs more room because it thinks by default.
+  const maxTokens = m.maxTokens || (anthropic ? 8000 : 3000);
   const r = await fetch(anthropic ? 'https://api.anthropic.com/v1/messages' : `${m.baseUrl}/chat/completions`, {
     method: 'POST',
     headers: anthropic
       ? { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' }
       : { 'content-type': 'application/json', ...(key && { authorization: `Bearer ${key}` }) },
     body: JSON.stringify(anthropic
-      ? { model: m.model, max_tokens: 2000, temperature: 0.2, system: SYSTEM_PROMPT, messages: [{ role: 'user', content: userMsg(body) }] }
-      : { model: m.model, max_tokens: 2000, temperature: 0.2, messages: [{ role: 'system', content: SYSTEM_PROMPT }, { role: 'user', content: userMsg(body) }] }),
+      ? { model: m.model, max_tokens: maxTokens, system, messages: [{ role: 'user', content: user }] } // current Claude models reject custom temperature
+      : { model: m.model, max_tokens: maxTokens, temperature: 0.2, messages: [{ role: 'system', content: system }, { role: 'user', content: user }] }),
   }).catch(e => { throw new Error(`Could not reach ${m.label}: ${e.cause?.code || e.message}`); });
   const data = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(data?.error?.message || `${m.label}: HTTP ${r.status}`);
+  // A record cut off at the cap could silently miss its plan or medications, so refuse it rather than save it.
+  const truncated = anthropic ? data.stop_reason === 'max_tokens' : data.choices?.[0]?.finish_reason === 'length';
+  if (truncated) throw new Error(`${m.label} stopped at its ${maxTokens}-token limit before finishing. Raise "maxTokens" for this model in models.json, or use a shorter dictation.`);
   const text = anthropic ? data.content.map(c => c.text || '').join('') : data.choices?.[0]?.message?.content || '';
-  return extractJson(text);
+  const u = data.usage || {};
+  const usage = { input: u.input_tokens ?? u.prompt_tokens ?? 0, output: u.output_tokens ?? u.completion_tokens ?? 0 };
+  return { json: extractJson(text), usage };
 }
 
 // Crude offline fallback so the demo works without a key. Clearly labelled in the UI.
-function refineLocally({ text }) {
-  const filler = /\b(um+|uh+|you know|i mean|like,|basically|sort of|kind of)\b[,]?\s*/gi;
-  const sentences = text.replace(filler, '').split(/(?<=[.!?])\s+/).map(s => s.trim()).filter(Boolean)
-    .map(s => s[0].toUpperCase() + s.slice(1));
-  const actions = sentences.filter(s => /\b(will|need to|needs to|should|follow up|by (monday|tuesday|wednesday|thursday|friday|next week))\b/i.test(s));
-  const flags = [];
-  if (/\b(pregnan|disab|religio|age|race|gender)\w*/i.test(text)) flags.push({ type: 'protected_characteristic', note: 'Mentions a possibly protected characteristic — review before saving.' });
-  if (/\b(sick|medical|diagnos|medication|surgery)\w*/i.test(text)) flags.push({ type: 'medical', note: 'Mentions health information.' });
-  if (/\b(harass|discriminat|retaliat|threat|fire|terminate|lawsuit)\w*/i.test(text)) flags.push({ type: 'legal_risk', note: 'Contains language that may need HR/legal review.' });
-  return {
-    title: 'Untitled note (offline preview)', summary: sentences.slice(0, 2).join(' '), context: null,
-    key_points: sentences, concerns: [],
-    action_items: actions.map(a => ({ owner: null, action: a, due: null })),
-    follow_up: null, flags, unclear: ['Offline rules only — choose an AI model for real formatting.'],
-  };
+const filler = /\b(um+|uh+|you know|i mean|like,|basically|sort of|kind of)\b[,]?\s*/gi;
+const sentencesOf = text => text.replace(filler, '').split(/(?<=[.!?])\s+/).map(s => s.trim()).filter(Boolean).map(s => s[0].toUpperCase() + s.slice(1));
+function refineLocally({ text, templateId }) {
+  const unclear = ['Offline rules only - choose an AI model for real formatting.'];
+  if (templateId === 'afast_tfast') return { title: 'AFAST/TFAST (offline preview)', operator: null, positioning: null, afast: {}, tfast: {}, afast_notes: sentencesOf(text).join(' '), tfast_notes: null, vet_interpretation: null, flags: [], unclear };
+  const flags = /\b(euthan|consent)\w*/i.test(text) ? [{ type: 'euthanasia_consent', note: 'Mentions euthanasia or consent.' }] : [];
+  return { title: 'Untitled note (offline preview)', history: sentencesOf(text).join(' '), vitals: {}, exam: [], assessment: [],
+    plan: { diagnostics: [], treatment: [], medications: [], advice: [], recheck: null }, items_to_bill: [], flags, unclear };
 }
+const summaryLocally = () => ({ greeting: 'Hi Owner A,', paragraphs: ['Thanks for bringing Patient A in today. (Offline preview - choose an AI model to write the real summary.)'], home_care: [], next_visit: null });
 
 async function readBody(req) {
   let s = ''; for await (const c of req) { s += c; if (s.length > 200_000) throw new Error('Body too large'); }
   return JSON.parse(s || '{}');
 }
 
+// Shared checks + timing + cost for both AI endpoints.
+async function runAi(req, send, body, offline, call) {
+  if (rateLimited(req)) return send(429, { error: `Too many requests - limit is ${RATE_LIMIT} per minute. Wait a moment and retry.` });
+  const m = find(body.modelId);
+  if (!m) return send(400, { error: 'Unknown model' });
+  if (!isAvailable(m)) return send(400, { error: `${m.label} is not configured (set ${m.keyEnv}).` });
+  const t0 = Date.now();
+  if (m.provider === 'offline') return send(200, { note: offline(), offline: true, ms: Date.now() - t0, usage: null, cost: 0 });
+  const { json, usage } = await call(m);
+  return send(200, { note: json, offline: false, ms: Date.now() - t0, usage, cost: costUsd(m, usage) });
+}
+
 http.createServer(async (req, res) => {
   const send = (code, obj) => { res.writeHead(code, { 'content-type': 'application/json' }); res.end(JSON.stringify(obj)); };
   try {
-    if (!authorized(req)) { res.writeHead(401, { 'www-authenticate': 'Basic realm="HR Voice Notes demo"' }); return res.end('Authentication required'); }
+    if (!authorized(req)) { res.writeHead(401, { 'www-authenticate': 'Basic realm="Vet Voice Notes demo"' }); return res.end('Authentication required'); }
     if (req.method === 'GET' && req.url === '/api/models') return send(200, { models: publicList() });
+    if (req.method === 'GET' && req.url === '/api/templates') return send(200, { templates: publicTemplates() });
     if (req.method === 'POST' && req.url === '/api/refine') {
-      if (rateLimited(req)) return send(429, { error: `Too many requests — limit is ${RATE_LIMIT} per minute. Wait a moment and retry.` });
       const body = await readBody(req);
       if (!body.text?.trim()) return send(400, { error: 'No text provided' });
-      const m = find(body.modelId);
-      if (!m) return send(400, { error: 'Unknown model' });
-      if (!isAvailable(m)) return send(400, { error: `${m.label} is not configured (set ${m.keyEnv}).` });
-      const t0 = Date.now();
-      const note = m.provider === 'offline' ? refineLocally(body) : await callModel(m, body);
-      return send(200, { note, offline: m.provider === 'offline', ms: Date.now() - t0 });
+      const t = findTemplate(body.templateId);
+      if (!t) return send(400, { error: 'Unknown template' });
+      const user = buildUserMessage({ ...body, today: new Date().toISOString().slice(0, 10) });
+      return await runAi(req, send, body, () => refineLocally(body), m => callModel(m, buildSystem(t), user)); // await: keep provider errors inside this try
+    }
+    if (req.method === 'POST' && req.url === '/api/summary') {
+      const body = await readBody(req);
+      if (!body.recordText?.trim()) return send(400, { error: 'No record provided' });
+      return await runAi(req, send, body, summaryLocally, m => callModel(m, SUMMARY_SYSTEM, buildSummaryMessage(body)));
+    }
+    if (req.method === 'POST' && req.url === '/api/pms') {
+      // Stand-in for a practice-management-system integration: accepts the record and returns a reference.
+      const body = await readBody(req);
+      if (!body.patientId || !body.recordText) return send(400, { error: 'patientId and recordText are required' });
+      return send(200, { ok: true, ref: 'PMS-' + randomUUID().slice(0, 8).toUpperCase() });
     }
     if (req.method !== 'GET') return send(405, { error: 'Method not allowed' });
     const path = normalize(req.url.split('?')[0]).replace(/^(\.\.[/\\])+/, '');
@@ -110,4 +131,4 @@ http.createServer(async (req, res) => {
     if (e.code === 'ENOENT') return send(404, { error: 'Not found' });
     console.error(e); send(500, { error: e.message });
   }
-}).listen(PORT, () => console.log(`HR voice notes demo: http://localhost:${PORT}  (models available: ${MODELS.filter(isAvailable).map(m => m.id).join(', ')})`));
+}).listen(PORT, () => console.log(`Vet voice notes demo: http://localhost:${PORT}  (models available: ${models().filter(isAvailable).map(m => m.id).join(', ')})`));

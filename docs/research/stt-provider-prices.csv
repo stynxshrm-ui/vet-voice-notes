@@ -1,0 +1,6 @@
+"Provider","Good fit","Listed price","Notes"
+"OpenAI gpt-4o-mini-transcribe","Best default for cost + quality","$0.003/min","About $0.18/hour; good for notes, meetings, lectures. developers.openai"
+"OpenAI gpt-4o-transcribe","Higher-accuracy transcription","$0.006/min","About $0.36/hour. developers.openai"
+"Deepgram Nova-3","Fast, scalable, speaker/timestamp features","From $0.0048/min monolingual; $0.0058/min multilingual","Strong option for high-volume production. deepgram"
+"Google Cloud Speech-to-Text","Already on GCP / Google ecosystem","Standard models: 60 free min/month, then listed around $0.016/min for V2 standard/Chirp in one comparison; official pricing varies by model and data-logging setting","More expensive at low scale unless you qualify for discounts. cloud.google+1"
+"Self-hosted Whisper","Privacy-sensitive or very high volume","Server cost only","More ops work: GPU capacity, queueing, model updates, reliability."

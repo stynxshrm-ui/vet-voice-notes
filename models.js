@@ -1,50 +1,60 @@
-// Model registry for the "AI Post-Processing Mode" dropdown.
-// Every entry except Claude uses the OpenAI-compatible /chat/completions API.
-// Provider model IDs change often — verify them against each provider's docs and override
-// via the env var in `modelEnv` without touching code.
+// Model registry for the AI model dropdown, read from models.json (edit that file, not this one).
+// The file is re-read whenever it changes, so new models and prices apply without a restart.
+// Every provider except Anthropic uses the OpenAI-compatible /chat/completions API.
+import { readFileSync, statSync } from 'node:fs';
+
 const env = process.env;
+const FILE = new URL('./models.json', import.meta.url);
+const PROVIDERS = ['openai-compatible', 'anthropic', 'offline'];
 
-export const MODELS = [
-  // --- Cloud APIs (pay-as-you-go) ---
-  { id: 'deepseek-v4-flash', group: 'Cloud API (Ultra-Low Cost)', label: 'DeepSeek V4 Flash (Fast, Dirt Cheap)',
-    baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-v4-flash', modelEnv: 'DEEPSEEK_FLASH_MODEL', keyEnv: 'DEEPSEEK_API_KEY' },
-  { id: 'deepseek-v4-pro', group: 'Cloud API (Ultra-Low Cost)', label: 'DeepSeek V4 Pro (High Reasoning / Deep Clean)',
-    baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-v4-pro', modelEnv: 'DEEPSEEK_PRO_MODEL', keyEnv: 'DEEPSEEK_API_KEY' },
-  { id: 'qwen3.8-flash', group: 'Cloud API (Ultra-Low Cost)', label: 'Alibaba Qwen 3.8 Flash (Excellent Multi-lingual)',
-    baseUrl: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1', model: 'qwen3.8-flash', modelEnv: 'QWEN_FLASH_MODEL', keyEnv: 'DASHSCOPE_API_KEY' },
-  { id: 'qwen3.7-plus', group: 'Cloud API (Ultra-Low Cost)', label: 'Alibaba Qwen 3.7 Plus (Balanced & Stable)',
-    baseUrl: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1', model: 'qwen3.7-plus', modelEnv: 'QWEN_PLUS_MODEL', keyEnv: 'DASHSCOPE_API_KEY' },
+function validate(list) {
+  const ids = new Set();
+  for (const m of list) {
+    const where = `models.json: model "${m.id ?? '?'}"`;
+    if (!m.id || !m.label || !m.group) throw new Error(`${where} needs id, label and group`);
+    if (ids.has(m.id)) throw new Error(`${where} is listed twice`);
+    ids.add(m.id);
+    if (!PROVIDERS.includes(m.provider)) throw new Error(`${where}: provider must be one of ${PROVIDERS.join(', ')}`);
+    if (m.provider === 'openai-compatible' && !m.baseUrl) throw new Error(`${where} needs baseUrl`);
+    if (m.provider !== 'offline' && !m.model) throw new Error(`${where} needs model`);
+    if (m.provider !== 'offline' && !m.local && !m.keyEnv) throw new Error(`${where} needs keyEnv (or local: true)`);
+    if (m.price && !(Number.isFinite(m.price.input) && Number.isFinite(m.price.output))) throw new Error(`${where}: price needs numeric input and output`);
+    if (m.maxTokens !== undefined && !(Number.isInteger(m.maxTokens) && m.maxTokens >= 256)) throw new Error(`${where}: maxTokens must be a whole number of at least 256`);
+  }
+  return list;
+}
 
-  { id: 'openai-mini', group: 'Cloud API (Ultra-Low Cost)', label: 'OpenAI GPT-4o mini (Cheap, Reliable JSON)',
-    baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini', modelEnv: 'OPENAI_MODEL', keyEnv: 'OPENAI_API_KEY' },
+// Cached by modification time. A broken edit keeps the last good list (and logs why) instead of taking the app down.
+let cache = { mtime: 0, list: [] };
+export function models() {
+  let mtime;
+  try { mtime = statSync(FILE).mtimeMs; } catch (e) { if (cache.list.length) return cache.list; throw new Error('models.json not found'); }
+  if (mtime === cache.mtime) return cache.list;
+  try {
+    const list = validate(JSON.parse(readFileSync(FILE, 'utf8')).models || []).filter(m => m.enabled !== false);
+    cache = { mtime, list };
+    console.log(`Loaded ${list.length} models from models.json`);
+  } catch (e) {
+    if (!cache.list.length) throw e;
+    console.error(`Ignoring models.json change, keeping previous models: ${e.message}`);
+    cache.mtime = mtime;
+  }
+  return cache.list;
+}
 
-  // --- Hosted inference (free developer tiers) ---
-  { id: 'groq-qwen', group: 'Hosted Inference (Free Tier Available)', label: 'Groq Cloud: Qwen 3.8 27B (Fast)',
-    baseUrl: 'https://api.groq.com/openai/v1', model: 'qwen/qwen3.8-27b', modelEnv: 'GROQ_QWEN_MODEL', keyEnv: 'GROQ_API_KEY' },
-  { id: 'groq-gpt-oss-120b', group: 'Hosted Inference (Free Tier Available)', label: 'Groq Cloud: GPT-OSS 120B (Deep Formatting)',
-    baseUrl: 'https://api.groq.com/openai/v1', model: 'openai/gpt-oss-120b', modelEnv: 'GROQ_GPT_OSS_120B_MODEL', keyEnv: 'GROQ_API_KEY' },
-  { id: 'groq-gpt-oss-20b', group: 'Hosted Inference (Free Tier Available)', label: 'Groq Cloud: GPT-OSS 20B (Ultra-Fast)',
-    baseUrl: 'https://api.groq.com/openai/v1', model: 'openai/gpt-oss-20b', modelEnv: 'GROQ_GPT_OSS_20B_MODEL', keyEnv: 'GROQ_API_KEY' },
+export function costUsd(m, usage) {
+  return m.price && usage ? (usage.input * m.price.input + usage.output * m.price.output) / 1e6 : null;
+}
 
-  // --- Self-hosted (no key; text stays on your network) ---
-  { id: 'local-ollama-qwen3', group: 'Self-Hosted (Private Server)', label: 'Local: Ollama / Qwen 3 (100% Private)', local: true,
-    baseUrl: env.OLLAMA_URL || 'http://localhost:11434/v1', model: 'qwen3', modelEnv: 'OLLAMA_MODEL' },
-  { id: 'local-vllm-deepseek', group: 'Self-Hosted (Private Server)', label: 'Local: vLLM / DeepSeek 7B (High Throughput)', local: true,
-    baseUrl: env.VLLM_URL || 'http://localhost:8000/v1', model: 'deepseek-ai/DeepSeek-R1-Distill-Qwen-7B', modelEnv: 'VLLM_MODEL' },
-
-  // --- Anthropic (different API shape) ---
-  { id: 'claude-haiku', group: 'Anthropic', label: 'Claude Haiku (Reliable baseline)', provider: 'anthropic',
-    model: 'claude-haiku-5-5', modelEnv: 'ANTHROPIC_MODEL', keyEnv: 'ANTHROPIC_API_KEY' },
-
-  // --- No AI ---
-  { id: 'offline', group: 'No AI', label: 'Offline rules only (no AI, basic cleanup)', provider: 'offline' },
-];
-
-export const resolve = m => ({ ...m, model: (m.modelEnv && env[m.modelEnv]) || m.model });
+export const resolve = m => ({
+  ...m,
+  model: (m.modelEnv && env[m.modelEnv]) || m.model,
+  baseUrl: (m.baseUrlEnv && env[m.baseUrlEnv]) || m.baseUrl,
+});
 export const isAvailable = m => m.provider === 'offline' || m.local || !!env[m.keyEnv];
-export const find = id => { const m = MODELS.find(x => x.id === id); return m && resolve(m); };
+export const find = id => { const m = models().find(x => x.id === id); return m && resolve(m); };
 
-// What the UI shows: where the text goes. Important for HR data.
+// What the UI shows: where the text goes. Important for client and patient data.
 export function destination(m) {
   if (m.provider === 'offline') return 'Nothing leaves this server.';
   if (m.local) return `Sent to your own server (${new URL(m.baseUrl).host}). Stays on your network.`;
@@ -52,7 +62,8 @@ export function destination(m) {
   return `Pseudonymized text is sent to ${host} (third-party cloud).`;
 }
 
-export const publicList = () => MODELS.map(m => ({
+export const publicList = () => models().map(m => ({
   id: m.id, group: m.group, label: m.label, available: isAvailable(m), destination: destination(resolve(m)),
-  needs: isAvailable(m) ? null : m.keyEnv,
+  needs: isAvailable(m) ? null : m.keyEnv, reasoning: !!m.reasoning,
+  price: m.price ? [m.price.input, m.price.output] : null, priceChecked: m.price?.checked || null, priceSource: m.price?.source || null,
 }));

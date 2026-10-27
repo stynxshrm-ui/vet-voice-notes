@@ -1,0 +1,6 @@
+"Option","Hardware","Approximate cost","Best for","Tradeoff"
+"faster-whisper on CPU VPS","2–8 vCPU, 4–16 GB RAM","~$5–30/month","Low/medium volume, private transcription","Slower; large models can be slow"
+"whisper.cpp on CPU VPS","2–8 vCPU, lower RAM","~$5–25/month","Memory-constrained servers, batch jobs","Less convenient Python integration than faster-whisper"
+"faster-whisper on serverless GPU","L4 / A10 / RTX-class GPU","~$0.48–1.10/hour while active","Bursty production traffic","Cold starts and orchestration"
+"Reserved/dedicated GPU VPS","L4, A10, RTX 4090/A5000","~$60–300+/month","Consistent high volume","You pay even when idle"
+"Browser Whisper WebGPU/WASM","User’s device","$0 server compute","Privacy-first, short recordings","Variable device performance; model download"

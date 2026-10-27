@@ -3,20 +3,22 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>HR Voice Notes</title>
+<title>Vet Voice Notes</title>
 <style>
-  :root { --bg:#f6f7f9; --card:#fff; --ink:#1c2230; --mute:#677086; --line:#e2e5ec; --accent:#2f5bea; --warn:#b45309; --warnbg:#fef3c7; --bad:#b42318; --badbg:#fee4e2; --ok:#067647; }
-  @media (prefers-color-scheme: dark) { :root { --bg:#12151c; --card:#1a1f2a; --ink:#e8ebf2; --mute:#98a1b5; --line:#2b3242; --accent:#7b9bff; --warn:#fbbf24; --warnbg:#3a2e0b; --bad:#fda29b; --badbg:#3b1512; --ok:#6ce9a6; } }
+  :root { --bg:#f6f7f9; --card:#fff; --ink:#1c2230; --mute:#677086; --line:#e2e5ec; --accent:#0f7b6c; --warn:#b45309; --warnbg:#fef3c7; --bad:#b42318; --badbg:#fee4e2; --ok:#067647; --okbg:#dcfae6; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#12151c; --card:#1a1f2a; --ink:#e8ebf2; --mute:#98a1b5; --line:#2b3242; --accent:#3fc1ac; --warn:#fbbf24; --warnbg:#3a2e0b; --bad:#fda29b; --badbg:#3b1512; --ok:#6ce9a6; --okbg:#0b2e1d; } }
   * { box-sizing:border-box; }
   body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.5 system-ui,sans-serif; }
   main { max-width:1100px; margin:0 auto; padding:24px 16px 60px; display:grid; gap:16px; grid-template-columns:1fr 1fr; }
   header { grid-column:1/-1; display:flex; justify-content:space-between; align-items:baseline; flex-wrap:wrap; gap:8px; }
+  .banner { grid-column:1/-1; font-size:13px; padding:8px 12px; border-radius:8px; background:var(--warnbg); color:var(--warn); }
   h1 { font-size:20px; margin:0; } h2 { font-size:13px; text-transform:uppercase; letter-spacing:.05em; color:var(--mute); margin:0 0 10px; }
   .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px; }
   .full { grid-column:1/-1; }
   .badges span { font-size:12px; padding:2px 8px; border-radius:99px; border:1px solid var(--line); color:var(--mute); margin-left:6px; }
   textarea, input, select { width:100%; font:inherit; color:inherit; background:var(--bg); border:1px solid var(--line); border-radius:8px; padding:8px 10px; }
   textarea { min-height:190px; resize:vertical; }
+  textarea.record { min-height:380px; font:13px/1.5 ui-monospace,Menlo,Consolas,monospace; }
   label { display:block; font-size:12px; color:var(--mute); margin:10px 0 4px; }
   .row { display:flex; gap:10px; } .row > * { flex:1; }
   button { font:inherit; border:1px solid var(--line); background:var(--card); color:var(--ink); border-radius:8px; padding:8px 14px; cursor:pointer; }
@@ -29,31 +31,41 @@
   #status { font-size:13px; color:var(--mute); margin-top:8px; min-height:20px; }
   .flag { padding:8px 10px; border-radius:8px; background:var(--warnbg); color:var(--warn); margin:6px 0; font-size:14px; }
   .flag.hi { background:var(--badbg); color:var(--bad); }
-  .note h3 { margin:0 0 4px; } .note h4 { margin:14px 0 4px; font-size:13px; color:var(--mute); text-transform:uppercase; letter-spacing:.04em; }
+  .note h4 { margin:14px 0 4px; font-size:13px; color:var(--mute); text-transform:uppercase; letter-spacing:.04em; }
   .note ul { margin:0; padding-left:20px; } .muted { color:var(--mute); }
-  .actions { display:flex; gap:8px; margin-top:14px; flex-wrap:wrap; }
+  .actions { display:flex; gap:8px; margin-top:14px; flex-wrap:wrap; align-items:center; }
   .log { border-top:1px solid var(--line); padding:10px 0; display:flex; justify-content:space-between; gap:10px; }
   .log:first-of-type { border-top:0; } .log small { color:var(--mute); }
+  .log details pre { white-space:pre-wrap; font-size:13px; margin:6px 0 0; }
   .drop { border:2px dashed var(--line); border-radius:8px; padding:14px; text-align:center; cursor:pointer; }
   .drop:hover, .drop.over { border-color:var(--accent); background:var(--bg); } .drop.busy { opacity:.5; pointer-events:none; }
   .pick label { display:inline-flex; gap:6px; align-items:center; margin:2px 14px 2px 0; font-size:14px; color:var(--ink); }
   .pick input { width:auto; } .pick label.off { color:var(--mute); opacity:.6; }
   .grid { display:grid; gap:12px; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); margin-top:12px; }
-  .grid .col { border:1px solid var(--line); border-radius:8px; padding:12px; font-size:14px; }
-  .grid .col h3 { font-size:15px; } .grid .col .meta { font-size:12px; color:var(--mute); margin-bottom:6px; }
+  .grid .col { border:1px solid var(--line); border-radius:8px; padding:12px; font-size:14px; min-width:0; }
+  .grid .col pre { white-space:pre-wrap; font-size:12px; margin:0; }
+  .grid .col h3 { font-size:15px; margin:0 0 4px; } .grid .col .meta { font-size:12px; color:var(--mute); margin-bottom:6px; }
   .grid .col.err { color:var(--bad); }
+  .pt { font-size:13px; color:var(--mute); margin-top:6px; }
+  .cost { font-size:13px; padding:4px 10px; border-radius:99px; background:var(--okbg); color:var(--ok); }
+  .calc { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; }
+  .calc label { margin-top:0; }
+  .tiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:10px; margin-top:14px; }
+  .tile { border:1px solid var(--line); border-radius:8px; padding:12px; }
+  .tile b { display:block; font-size:24px; } .tile.us { border-color:var(--accent); }
   @media (max-width:800px) { main { grid-template-columns:1fr; } }
 </style>
 </head>
 <body>
 <main>
   <header>
-    <h1>🎙️ HR Voice Notes <span class="muted" style="font-weight:400">— demo</span></h1>
+    <h1>🐾 Vet Voice Notes <span class="muted" style="font-weight:400">— demo</span></h1>
     <div class="badges"><span id="devBadge">speech: not loaded</span><span id="aiBadge">AI: …</span></div>
   </header>
+  <div class="banner">Demo only — use fake patient data. Records are stored in this browser and the PMS send is simulated.</div>
 
   <section class="card">
-    <h2>1 · Dictate</h2>
+    <h2>1 · Dictate after the consult</h2>
     <div class="row" style="align-items:center">
       <button id="mic" title="Start / stop recording">🎤</button>
       <div style="flex:3">
@@ -74,29 +86,70 @@
     </div>
     <label>Raw transcript (editable)</label>
     <textarea id="raw" placeholder="Transcript appears here — or type/paste to try the formatter without a mic."></textarea>
-    <button id="sample" style="margin-top:8px">Insert sample dictation</button>
+    <button id="sample" style="margin-top:8px">Insert sample dictation for this template</button>
   </section>
 
   <section class="card">
-    <h2>2 · Format for HR</h2>
+    <h2>2 · Patient &amp; template</h2>
+    <label style="margin-top:0" for="patient">Patient</label>
+    <select id="patient"></select>
+    <div id="ptInfo" class="pt"></div>
     <div class="row">
-      <div><label style="margin-top:0">Note type</label>
-        <select id="noteType">
-          <option value="general">General log</option><option value="one_on_one">1:1 meeting</option>
-          <option value="performance">Performance / coaching</option><option value="incident">Incident / conduct</option>
-          <option value="interview">Interview debrief</option>
-        </select></div>
-      <div><label style="margin-top:0">Detail</label>
+      <div><label for="template">Template</label><select id="template"></select></div>
+      <div><label for="detail">Detail</label>
         <select id="detail"><option value="brief">Brief</option><option value="balanced" selected>Balanced</option><option value="detailed">Detailed</option></select></div>
     </div>
-    <label for="aiModel">AI post-processing mode</label>
+    <label for="aiModel">AI model</label>
     <select id="aiModel"></select>
     <p id="aiDest" class="muted" style="font-size:13px;margin:6px 0 0"></p>
-    <label>Employee names to pseudonymize before sending (comma-separated)</label>
-    <input id="names" placeholder="e.g. Priya Sharma, Mark, Dana">
-    <p class="muted" style="font-size:13px;margin:6px 0 12px">Names are replaced with “Employee A/B…” in your browser before the text reaches the AI, then restored in the result.</p>
-    <button id="refine" class="primary">Format note</button>
+    <label for="names">Other names to hide from the AI (comma-separated)</label>
+    <input id="names" placeholder="e.g. a second owner, a neighbour">
+    <p class="muted" style="font-size:13px;margin:6px 0 12px">The pet and owner names are replaced with “Patient A / Owner A” in your browser before the text reaches the AI, then restored in the result.</p>
+    <button id="refine" class="primary">Write record</button>
     <div id="refineStatus" class="muted" style="margin-top:8px;font-size:13px"></div>
+  </section>
+
+  <section class="card full note" id="resultCard" hidden>
+    <h2>3 · Review, edit &amp; save</h2>
+    <div id="flags"></div>
+    <div class="row" style="flex-wrap:wrap">
+      <div style="flex:2;min-width:280px">
+        <label style="margin-top:0">Clinical record (edit freely before saving)</label>
+        <textarea id="record" class="record"></textarea>
+      </div>
+      <div style="min-width:220px">
+        <h4 style="margin-top:0">Items to bill</h4><div id="bill"></div>
+        <div id="unclear"></div>
+      </div>
+    </div>
+    <div class="actions">
+      <button id="save" class="primary">Save to patient record</button>
+      <button id="pms">Send to PMS (simulated)</button>
+      <button id="copy">Copy record</button>
+      <span id="cost" class="cost" hidden></span>
+      <span id="saveStatus" class="muted" style="font-size:13px"></span>
+    </div>
+  </section>
+
+  <section class="card full note" id="summaryCard" hidden>
+    <h2>4 · Client summary</h2>
+    <p class="muted" style="font-size:13px;margin:0 0 8px">Written from the record above as you edited it. Check it before it goes to the client.</p>
+    <div class="row">
+      <div><label style="margin-top:0">Reading level</label><select id="level"><option value="friendly">Friendly</option><option value="simple">Very simple</option></select></div>
+      <div><label style="margin-top:0">Vet name</label><input id="vetName" value="Dr Lee"></div>
+      <div><label style="margin-top:0">Clinic</label><input id="clinic" value="Riverside Vet Clinic"></div>
+    </div>
+    <div class="actions" style="margin-top:10px"><button id="summarize" class="primary">Write client summary</button><span id="sumStatus" class="muted" style="font-size:13px"></span></div>
+    <textarea id="summary" style="margin-top:10px" placeholder="Summary appears here."></textarea>
+    <div class="actions">
+      <label style="margin:0;display:flex;gap:6px;align-items:center;font-size:14px;color:var(--ink)"><input type="checkbox" id="approve" style="width:auto"> I've checked this summary</label>
+      <button id="copySummary" disabled>Copy for email / SMS</button>
+    </div>
+  </section>
+
+  <section class="card full">
+    <h2>Patient history <span class="muted">(stored in this browser only)</span></h2>
+    <div id="log"><span class="muted">Nothing saved yet.</span></div>
   </section>
 
   <section class="card full">
@@ -107,18 +160,17 @@
     <div id="cmpGrid" class="grid"></div>
   </section>
 
-  <section class="card full note" id="resultCard" hidden>
-    <h2>3 · Review &amp; save</h2>
-    <div id="result"></div>
-    <div class="actions">
-      <button id="save" class="primary">Save to log</button>
-      <button id="copy">Copy as text</button>
-    </div>
-  </section>
-
   <section class="card full">
-    <h2>Saved log <span class="muted">(stored in this browser only — a real app would write to your database)</span></h2>
-    <div id="log"><span class="muted">Nothing saved yet.</span></div>
+    <h2>What would it cost your clinic?</h2>
+    <div class="calc">
+      <div><label>Vets dictating at the same time</label><input id="cVets" type="number" min="1" value="2"></div>
+      <div><label>Consults per vet per day</label><input id="cConsults" type="number" min="1" value="20"></div>
+      <div><label>Working days per month</label><input id="cDays" type="number" min="1" value="22"></div>
+      <div><label>Dictation per consult, minutes</label><input id="cMins" type="number" min="0.25" step="0.25" value="2"></div>
+      <div><label>Hosting per month, USD</label><input id="cHost" type="number" min="0" value="7"></div>
+    </div>
+    <div id="cOut" class="tiles"></div>
+    <p id="cBasis" class="muted" style="font-size:13px;margin:10px 0 0"></p>
   </section>
 </main>
 <script type="module" src="app.js"></script>

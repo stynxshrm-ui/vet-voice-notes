@@ -1,24 +1,31 @@
-# HR Voice Notes
+# Vet Voice Notes
 
-Dictate HR and operations notes by voice, then turn the rambling transcript into a clean, neutral, structured record. Speech-to-text runs **in the browser**; only text goes to the server.
+After a consult, the vet dictates by voice. The app turns the dictation into a structured clinical record, flags anything to check, and writes a plain-language summary for the client. The record is then saved to the patient's history. Speech-to-text runs **in the browser**; only text goes to the server.
 
-> **Demo only.** There is no real access control, audit trail or database. Use fake data. Do not enter real employee information.
+> **Demo only.** There is no real access control, audit trail, database or practice-management integration ("Send to PMS" is simulated). Use fake data. Do not enter real client or patient information.
 
 ## How it works
 
 ```
 Mic or audio file ─► Whisper (in-browser, WebGPU/WASM) ─► raw transcript
                                                               │
-                 names swapped for "Employee A/B…" (in browser)
+        pet/owner names swapped for "Patient A / Owner A" (in browser)
                                                               ▼
-                 Node server ─► your chosen LLM ─► structured JSON ─► review ─► save
+   Node server ─► LLM extracts JSON for the chosen template ─► app renders record ─► vet edits ─► save / PMS
+                                                                                        │
+                                                         client summary written from the edited record
 ```
 
-- **Speech-to-text:** [Transformers.js](https://huggingface.co/docs/transformers.js) runs Whisper (tiny.en or base.en) in a Web Worker. It uses WebGPU when a GPU adapter exists and falls back to WASM. Audio never leaves the browser. The first load downloads the model (about 40–75 MB) and caches it.
-- **Upload or record:** use the mic, or drop a WAV, MP3 or M4A file.
-- **Pseudonymization:** names you list are replaced with `Employee A`, `Employee B`… before the text is sent to any AI, then restored in the result.
-- **AI formatting:** a prompt ([prompts.js](prompts.js)) rewrites the transcript as a neutral, factual note with a summary, key points, concerns, action items and follow-up. It does not invent facts. It also flags medical, legal-risk, protected-characteristic and speculative content, and lists anything that needs verification.
-- **Model picker and compare mode:** choose from several cheap models, or tick several and run the same transcript through all of them side by side with timings.
+- **Speech-to-text:** [Transformers.js](https://huggingface.co/docs/transformers.js) runs Whisper (tiny.en or base.en) in a Web Worker, on WebGPU when available, otherwise WASM. Audio never leaves the browser. The model (about 40–75 MB) is downloaded once and cached.
+- **Templates** ([templates.js](templates.js)): Consult (SOAP), Recheck, Vaccination / health check, Dental / GA, Phone call, AFAST / TFAST ultrasound. The LLM only *extracts* into JSON; [public/render.js](public/render.js) writes the record text.
+- **Never assumes normal:** anything not dictated shows as "Not stated" or "not assessed".
+- **AFAST / TFAST:** the AFAST fluid score (DH, SR, CC, HR; 0, 1/2 or 1 each) is calculated by the app, not the model. Views that weren't scanned show "not assessed" and the score is marked partial. Interpretation lines are drafts for the vet to confirm.
+- **Flags:** dose/unit problems, a weight-based drug with no weight, controlled drugs, euthanasia/consent, and mismatches with the patient on file. Misheard drug names fixed using [vocab.js](vocab.js) are listed for the vet to confirm.
+- **Items to bill:** vaccines, procedures, tests and dispensed drugs mentioned in the dictation.
+- **Client summary:** a second AI pass over the vet-edited record. It uses plain language, copies doses exactly and adds nothing new. Copying is disabled until the vet ticks "I've checked this summary".
+- **Patients and history:** five fake patients ([public/patients.js](public/patients.js)); saved records live in the browser's `localStorage`.
+- **Cost:** each record shows its AI cost (when the model has a price set), and a calculator compares monthly running cost with VetNotes' published plans.
+- **Compare mode:** run one transcript through several models side by side, with timing and cost.
 
 ## Quick start
 
@@ -29,61 +36,70 @@ cp .env.example .env     # add the API keys you want
 node server.js           # http://localhost:3000
 ```
 
-Use Chrome or Edge for WebGPU. The mic needs `localhost` or HTTPS.
+Use Chrome or Edge for WebGPU. The mic needs `localhost` or HTTPS. Click "Insert sample dictation for this template" to try each template without a mic.
 
-Models with no key are greyed out in the dropdown. "Offline rules only" works with no key, but it is only basic cleanup.
+## Choosing a model (eval)
+
+[eval/cases.json](eval/cases.json) holds fake dictations with facts that must appear (doses, tooth numbers, the AFAST partial score), things that must not (a changed cytology grade, "negative" for an unscanned view), and expected flags. With the server running:
+
+```bash
+node eval/run.js groq-qwen groq-gpt-oss-120b openai-mini
+```
+
+It waits and retries when a provider rate-limits (Groq's free tier allows about 8k tokens per minute). Run it before a demo and default to the cheapest model that passes everything.
 
 ## Configuration
 
-Set these in `.env` (local) or in your host's environment settings (deployed):
-
 | Variable | Purpose |
 |---|---|
-| `OPENAI_API_KEY` | GPT-4o mini |
-| `GROQ_API_KEY` | Qwen 3.8 27B, GPT-OSS 120B and 20B on Groq (free tier available) |
-| `DEEPSEEK_API_KEY` | DeepSeek V4 Flash and Pro |
-| `DASHSCOPE_API_KEY` | Alibaba Qwen (international endpoint) |
-| `ANTHROPIC_API_KEY` | Claude Haiku |
+| `OPENAI_API_KEY`, `GROQ_API_KEY`, `DEEPSEEK_API_KEY`, `DASHSCOPE_API_KEY`, `ANTHROPIC_API_KEY` | Model providers; models without a key are greyed out |
 | `OLLAMA_URL`, `VLLM_URL` | Self-hosted OpenAI-compatible servers (local use only) |
-| `APP_PASSWORD`, `APP_USER` | Basic Auth login (user defaults to `hr`) |
+| `APP_PASSWORD`, `APP_USER` | Basic Auth login (user defaults to `vet`) |
 | `RATE_LIMIT_PER_MIN` | AI requests per visitor per minute (default 20) |
 
-Provider model IDs change often. Override any of them without editing code, for example `GROQ_QWEN_MODEL=...` (see `modelEnv` in [models.js](models.js)). To see what Groq currently offers: `GET https://api.groq.com/openai/v1/models`.
+### Models and prices: [models.json](models.json)
+
+All AI models, their model IDs and their prices live in `models.json`. Edit it to add a model, hide one (`"enabled": false`), or update a price. The server re-reads it when it changes, so refresh the page and the dropdown and cost calculator pick it up, with no restart. A broken edit (bad JSON, missing field) is ignored and the previous list kept; the server log says why.
+
+```json
+{ "id": "groq-gpt-oss-120b", "group": "Hosted Inference", "label": "Groq Cloud: GPT-OSS 120B", "enabled": true,
+  "provider": "openai-compatible", "baseUrl": "https://api.groq.com/openai/v1", "model": "openai/gpt-oss-120b", "keyEnv": "GROQ_API_KEY",
+  "reasoning": true, "price": { "input": 0.15, "output": 0.60, "checked": "2026-10-27", "source": "where you got it" } }
+```
+
+`price` is USD per million tokens. Optional `maxTokens` caps how much the model may write per request (default 3000, or 8000 for Anthropic); lower it to fit a provider's output-per-minute limit. If a record hits the cap, the app refuses it with a clear message instead of saving a cut-off note. The `_help` block at the top of the file explains every field. API keys stay in `.env`, never in `models.json`.
 
 ## Deploy (Render)
 
 1. Push this repo to GitHub (make sure `.env` is not committed).
 2. In Render choose **New → Blueprint** and select the repo. It reads [render.yaml](render.yaml).
 3. Set `APP_PASSWORD` and your API keys in the dashboard.
-4. Share the HTTPS URL, username `hr` and the password with testers.
 
-With `NODE_ENV=production` the server refuses to start without `APP_PASSWORD`, so a public deployment cannot be left open by accident. Ollama and vLLM entries will not work on a hosted server because they point at `localhost` there.
+With `NODE_ENV=production` the server refuses to start without `APP_PASSWORD`.
 
 ## Privacy notes
 
 - Audio stays in the browser. Only text is sent to the server.
-- Only the names you list are pseudonymized. Nicknames, misspellings and names you forget will still go out.
-- Cloud models receive the pseudonymized note text. DeepSeek and Alibaba are China-hosted services. The UI shows where the text goes for the selected model.
-- Saved notes live in each browser's `localStorage`. They are not shared and not backed up.
+- The selected patient's name and owner name (full and first name) are pseudonymized automatically, plus any extra names you list. Nicknames and misspellings will still go out.
+- Cloud models receive the pseudonymized text. The UI shows where the text goes for the selected model.
 
 ## Project layout
 
 ```
-server.js        static files, /api/models, /api/refine, auth, rate limit
-models.js        model registry for the dropdown (endpoints, keys, overrides)
-prompts.js       system prompt and message builder for HR formatting
-env.js           loads .env before anything else
-public/          index.html, app.js (UI), worker.js (Whisper)
-samples/         two short synthetic voice clips for testing uploads
-render.yaml      Render blueprint
+server.js         static files, /api/models, /api/templates, /api/refine, /api/summary, /api/pms (stub), auth, rate limit
+templates.js      template registry: instructions + JSON shape per template
+prompts.js        core clinical-scribe rules and the client-summary prompt
+vocab.js          drug/breed/shorthand spellings given to the model
+models.json       AI models and prices (edit this)
+models.js         loads and validates models.json
+public/           index.html, app.js (UI), render.js (record text + AFAST score), patients.js (fake data + samples), worker.js (Whisper)
+eval/             fake eval cases and runner
+samples/          short synthetic voice clips for testing uploads
+docs/research/    pricing research: speech-to-text hosting options and transcription provider prices
 ```
-
-## Testing with the samples
-
-Drag [samples/sample-10s.mp3](samples/sample-10s.mp3) or [samples/vet-hr-10s.mp3](samples/vet-hr-10s.mp3) onto the upload box. They are synthetic voices, so accuracy is not representative. Try the "Insert sample dictation" button as well. It contains a back problem, medication, "lazy" and a guess that someone may leave, to test the flags and neutral rewrite.
 
 ## Known limitations
 
-- WASM transcription is slow on long recordings. WebGPU is much faster where available.
-- Small models can break the JSON format or add details. Use compare mode to check.
-- No authentication beyond a shared password, no database, no audit log.
+- Whisper tiny/base running in the browser may mishear accents and drug names. Check the transcript before writing the record.
+- Small models can drop details or break the JSON. Use the eval and compare mode.
+- No real PMS integration, authentication beyond a shared password, database or audit log.

@@ -1,0 +1,20 @@
+[
+  { "id": "consult-ear", "templateId": "consult_soap", "sample": "consult_soap",
+    "mustContain": ["apoquel", "1.5", "neptra", "38.6", "33.4", "2 weeks"],
+    "mustNotContain": ["+++ cocci", "3+ cocci"] },
+  { "id": "afast-partial", "templateId": "afast_tfast", "sample": "afast_tfast",
+    "mustContain": ["AFS): 0.5/4", "HR: not assessed", "Sub-xiphoid view: not assessed"],
+    "mustNotContain": ["Negative for free abdominal fluid"] },
+  { "id": "vaccination-cat", "templateId": "vaccination", "sample": "vaccination",
+    "mustContain": ["F3", "4.3", "38.4", "Revolution"], "mustNotContain": [] },
+  { "id": "dental-drugs", "templateId": "dental_ga", "sample": "dental_ga",
+    "mustContain": ["methadone", "0.3", "medetomidine", "alfax", "iso", "307", "407", "onsior"], "mustNotContain": [],
+    "expectFlags": ["controlled_drug"] },
+  { "id": "phone-no-exam", "templateId": "phone_call", "sample": "phone_call",
+    "mustContain": ["vomit"], "mustNotContain": ["EXAM"] },
+  { "id": "recheck-dental", "templateId": "recheck", "sample": "recheck",
+    "mustContain": ["metacam"], "mustNotContain": [] },
+  { "id": "dose-trap", "templateId": "consult_soap", "patientId": "P1001",
+    "text": "Biscuit in with a hot spot on the right hip. Clipped and cleaned. Sending home on cefalexin 600 grams twice daily for seven days. Recheck if not better.",
+    "mustContain": ["600"], "mustNotContain": [], "expectFlags": ["dose_unit"] }
+]
