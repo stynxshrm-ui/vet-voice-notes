@@ -173,7 +173,7 @@ function useNote(note, templateId, cost) {
   $('bill').innerHTML = templateId === 'afast_tfast' ? '<span class="muted">AFAST/TFAST scan</span>' : list(note.items_to_bill);
   $('unclear').innerHTML = note.unclear?.length ? `<h4>Please confirm</h4>${list(note.unclear)}` : '';
   $('cost').hidden = false; $('cost').textContent = `This record: ${money(cost)}`;
-  $('saveStatus').textContent = ''; $('summary').value = ''; $('approve').checked = false; $('copySummary').disabled = true;
+  $('saveStatus').textContent = ''; $('sumStatus').textContent = ''; $('sumCost').hidden = true; $('summary').value = ''; $('approve').checked = false; $('copySummary').disabled = true;
   $('resultCard').hidden = false; $('summaryCard').hidden = false;
   current.pmsRef = null; current.saved = false;
 }
@@ -188,7 +188,11 @@ $('summarize').onclick = async () => {
     const { note, cost, ms, usage } = await post('/api/summary', { recordText: pseudonymize($('record').value, map), modelId: $('aiModel').value, readingLevel: $('level').value });
     $('summary').value = summaryToText(restore(note, map), { vet: $('vetName').value, clinic: $('clinic').value });
     recordMeasurement('summary', usage);
-    $('sumStatus').textContent = `Done (${(ms / 1000).toFixed(1)}s, ${money(cost)})`;
+    // Every summary attempt is a real AI call, so regenerating adds to the consult total.
+    current.summaryCost = cost == null || current.summaryCost === null ? null : (current.summaryCost || 0) + cost;
+    const total = current.cost == null || current.summaryCost == null ? null : current.cost + current.summaryCost;
+    $('sumStatus').textContent = `Done (${(ms / 1000).toFixed(1)}s)`;
+    $('sumCost').hidden = false; $('sumCost').textContent = `This summary: ${money(cost)} · Consult total: ${total == null ? 'n/a' : money(total)}`;
     $('approve').checked = false; $('copySummary').disabled = true;
   } catch (e) { $('sumStatus').textContent = 'Error: ' + e.message; }
   $('summarize').disabled = false;
