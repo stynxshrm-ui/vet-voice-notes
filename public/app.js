@@ -39,7 +39,7 @@ async function transcribeBlob(blob) {
     status(`Transcribing locally… (${Math.round(audio.length / 16000)}s of audio)`);
     worker.postMessage({ type: 'transcribe', model: $('model').value, audio }, [audio.buffer]);
   } catch {
-    status('Could not read that audio file. Try WAV, MP3 or M4A.');
+    status('Could not read that audio file. Try WAV, MP3, M4A or WebM.');
     $('mic').disabled = false; $('drop').classList.remove('busy');
   }
 }
@@ -61,10 +61,10 @@ $('mic').onclick = async () => {
 };
 
 // ---------- Upload a recording ----------
-const ALLOWED = /\.(wav|mp3|m4a)$/i;
+const ALLOWED = /\.(wav|mp3|m4a|webm)$/i;
 function handleFile(f) {
   if (!f) return;
-  if (!ALLOWED.test(f.name)) return status('Unsupported file type. Use WAV, MP3 or M4A.');
+  if (!ALLOWED.test(f.name)) return status('Unsupported file type. Use WAV, MP3, M4A or WebM.');
   $('fileName').textContent = `${f.name} (${(f.size / 1048576).toFixed(1)} MB)`;
   transcribeBlob(f);
 }
